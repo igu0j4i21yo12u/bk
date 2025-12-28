@@ -24,6 +24,8 @@ Linux運用で使うバックアップ用スクリプトです。
 
 ```bash
 sudo bk [options] [target1] [target2] ...
+# rootユーザーの場合はsudo不要
+bk [options] [target1] [target2] ...
 ```
 
 注意: 本スクリプトはroot権限での実行が必要です。
