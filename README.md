@@ -38,7 +38,7 @@ bk [options] [target1] [target2] ...
 例:
 
 - `sudo bk /etc/hosts /etc/passwd`
-- `sudo bk /etc/wireguard`
+- `bk /etc/wireguard` (rootユーザーの場合)
 
 ## インストール
 
