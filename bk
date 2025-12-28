@@ -1,4 +1,9 @@
 #!/bin/bash
+# =========================
+# bk - Backup utility for Linux server administration
+# Backs up files/directories to /root/backup.d with timestamps
+# License: MIT | https://github.com/igu0j4i21yo12u/bk
+# =========================
 set -u
 
 backupDir="/root/backup.d"
