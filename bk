@@ -1,0 +1,135 @@
+#!/bin/bash
+set -u
+
+backupDir="/root/backup.d"
+logFile="${backupDir}/backuplog.txt"
+YmdHM=$(date +%Y%m%d_%H%M)
+
+if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+  echo "ERROR: This script must be run as root (or with sudo)."
+  exit 1
+fi
+
+usage() {
+  echo "Usage: bk [options] [target1] [target2] ..."
+  echo "Options:"
+  echo "  -h    Show help"
+  echo "  -l    Show backup log"
+  echo "Examples:"
+  echo "  bk /etc/hosts /etc/passwd"
+  echo "  bk /etc/wireguard"
+  exit 0
+}
+
+show_log() {
+  echo "**Backup Log (${logFile})**"
+  if [ -f "$logFile" ]; then
+    cat "$logFile"
+  else
+    echo "(log file not found yet)"
+  fi
+  exit 0
+}
+
+while getopts ":hl" opt; do
+  case $opt in
+    h) usage ;;
+    l) show_log ;;
+    \?) echo "ERROR: Invalid option -$OPTARG"; usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+[ "$#" -lt 1 ] && usage
+
+print_separator() { echo "----------------------------------------"; }
+
+make_target_base_dir() {
+  local src_parent="$1"
+  local dest="${backupDir}${src_parent}"
+  mkdir -p "$dest"
+  echo "$dest"
+}
+
+mkdir -p "$backupDir"
+
+for target in "$@"; do
+  print_separator
+  echo "**Processing:** $target"
+  echo ""
+
+  if [ ! -e "$target" ]; then
+    echo "ERROR: ${target} not found." | tee -a "$logFile"
+    print_separator
+    continue
+  fi
+
+  src_dir=$(cd "$(dirname "$target")" 2>/dev/null && pwd) || {
+    echo "ERROR: Cannot resolve directory of ${target}" | tee -a "$logFile"
+    print_separator
+    continue
+  }
+  src_name=$(basename "$target")
+  src_abs="${src_dir}/${src_name}"
+
+  case "$src_abs" in
+    "$backupDir"|"$backupDir"/*)
+      echo "ERROR: Refusing to backup inside backupDir itself: ${src_abs}" | tee -a "$logFile"
+      print_separator
+      continue
+      ;;
+  esac
+
+  if [ -f "$src_abs" ]; then
+    dest_base=$(make_target_base_dir "$src_dir")
+    backupFile="${dest_base}/${src_name}.${YmdHM}"
+
+    if cp -a -- "$src_abs" "$backupFile"; then
+      echo "SUCCESS: Backup created."
+      echo "   -> Source: ${src_abs}"
+      echo "   -> Backup: ${backupFile}"
+      echo "$(date '+%Y-%m-%d %H:%M:%S') - SUCCESS: ${src_abs} -> ${backupFile}" \
+        | tee -a "$logFile" >/dev/null
+      echo ""
+      echo "**DIFF Command Example:**"
+      echo "   diff \"$src_abs\" \"$backupFile\""
+    else
+      echo "ERROR: Failed to backup file: ${src_abs}" | tee -a "$logFile"
+    fi
+
+  elif [ -d "$src_abs" ]; then
+    echo "INFO: Directory given. Backing up files under: ${src_abs}/"
+
+    file_count=0
+
+    while IFS= read -r -d '' f; do
+      f_dir=$(cd "$(dirname "$f")" && pwd)
+      f_name=$(basename "$f")
+      f_dest_dir="${backupDir}${f_dir}"
+      mkdir -p "$f_dest_dir"
+
+      backupFile="${f_dest_dir}/${f_name}.${YmdHM}"
+
+      if cp -a -- "$f" "$backupFile"; then
+        echo "SUCCESS: ${f} -> ${backupFile}"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - SUCCESS: ${f} -> ${backupFile}" \
+          | tee -a "$logFile" >/dev/null
+        file_count=$((file_count + 1))
+      else
+        echo "ERROR: Failed to backup file: ${f}" | tee -a "$logFile"
+      fi
+    done < <(find "$src_abs" -type f -print0)
+
+    echo ""
+    echo "INFO: Backed up ${file_count} file(s) from ${src_abs}/"
+
+  else
+    echo "ERROR: Unsupported file type: ${src_abs}" | tee -a "$logFile"
+  fi
+
+  print_separator
+done
+
+echo ""
+echo "**All tasks completed.**"
+print_separator
